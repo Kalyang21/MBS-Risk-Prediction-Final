@@ -93,7 +93,46 @@ df[numerical_cols] = scaler.fit_transform(df[numerical_cols])
 print(" Standardized numerical features.")
 
 # 8. Save Final Engineered Dataset
-df.to_csv('engineered_data.csv', index=False)
+#df.to_csv('engineered_data.csv', index=False)
 print("\n Feature Engineering Completed Successfully!")
 print(" Final dataset saved as 'engineered_data.csv'.")
 
+# -------------------------
+# EXTRA FEATURES (just trying few things)
+# -------------------------
+
+print("trying some extra features...")
+
+# simple ratio (just experimenting)
+if "origupb" in df.columns and "dti" in df.columns:
+    df["loan_to_income_simple"] = df["origupb"] / (df["dti"] + 1)
+
+# interaction (not sure if useful, just checking)
+if "creditscore" in df.columns and "dti" in df.columns:
+    df["credit_dti_interaction"] = df["creditscore"] * df["dti"]
+
+print("extra features added")
+
+
+# -------------------------
+# CORRELATION CHECK
+# -------------------------
+
+print("\nchecking correlation with target (if exists)")
+
+if "delinquencyflag" in df.columns:
+    corr = df.corr(numeric_only=True)
+    print(corr["delinquencyflag"].sort_values(ascending=False).head(10))
+else:
+    print("target column not found for correlation")
+
+
+# -------------------------
+# SAVE SMALL SAMPLE ONLY (safe)
+# -------------------------
+
+print("saving small sample (not full data)")
+
+df.sample(1000).to_csv("engineered_sample.csv", index=False)
+
+print("done feature engineering safely")
