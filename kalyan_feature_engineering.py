@@ -1,138 +1,118 @@
-# 1. Import Libraries
+# -----------------------------
+# data preprocessing (my attempt)
+# -----------------------------
+
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
 
-# 2. Load Preprocessed Data
-df = pd.read_csv('Cleaned_LoanExport_Final.csv', low_memory=False)
-print(" Data loaded successfully!")
+print("loading data...")
 
-# 3. Drop Irrelevant Features
-columns_to_drop = ['LoanID', 'CustomerID']  # adjust names if needed
-df.drop(columns=columns_to_drop, axis=1, inplace=True, errors='ignore')
-print(" Dropped irrelevant columns.")
+df = pd.read_csv("Cleaned_LoanExport_Final.csv", low_memory=False)
 
-# 4. Safe New Feature Creation
+print("data loaded")
+print("shape:", df.shape)
 
-# Loan Age in Months (only if OriginationDate exists)
-if 'OriginationDate' in df.columns:
-    df['OriginationDate'] = pd.to_datetime(df['OriginationDate'], errors='coerce')
-    df['LoanAgeMonths'] = (pd.Timestamp.now() - df['OriginationDate']).dt.days // 30
-    df['OriginationYear'] = df['OriginationDate'].dt.year
-    df['OriginationMonth'] = df['OriginationDate'].dt.month
-    print(" Created LoanAgeMonths, OriginationYear, OriginationMonth features.")
-else:
-    print("OriginationDate column not found. Skipping LoanAgeMonths, OriginationYear, OriginationMonth creation.")
+# -----------------------------
+# checking duplicates
+# -----------------------------
 
-# Create DTI_Ratio (safe check Loan Amount / Borrower Income)
-loan_amount_col = None
-borrower_income_col = None
+print("\nchecking duplicates...")
 
-# Search for correct loan amount column
-for col in df.columns:
-    if 'loanamount' in col.lower().replace(' ', ''):
-        loan_amount_col = col
-    if 'borrowerincome' in col.lower().replace(' ', ''):
-        borrower_income_col = col
+dup = df.duplicated().sum()
+print("duplicates found:", dup)
 
-if loan_amount_col and borrower_income_col:
-    df['DTI_Ratio'] = df[loan_amount_col] / df[borrower_income_col]
-    print(f" Created DTI_Ratio using '{loan_amount_col}' and '{borrower_income_col}' columns.")
-else:
-    print("Loan Amount or Borrower Income column not found. Skipping DTI_Ratio creation.")
+if dup > 0:
+    print("removing duplicates...")
+    df = df.drop_duplicates()
+    print("done removing")
 
-# Create Credit Score Band
-def credit_score_band(score):
-    if pd.isnull(score):
-        return np.nan
-    if score >= 750:
-        return 'Excellent'
-    elif score >= 700:
-        return 'Good'
-    elif score >= 650:
-        return 'Fair'
-    else:
-        return 'Poor'
+# -----------------------------
+# dropping unnecessary stuff
+# -----------------------------
 
-# Find Credit Score Column
-credit_score_col = None
-for col in df.columns:
-    if 'creditscore' in col.lower().replace(' ', ''):
-        credit_score_col = col
+print("\nremoving some columns i think not needed")
 
-if credit_score_col:
-    # Converting Credit Score to numeric first
-    df[credit_score_col] = pd.to_numeric(df[credit_score_col], errors='coerce')
+cols_to_drop = ['LoanID', 'CustomerID']
 
-    # Now apply credit_score_band safely
-    df['CreditScoreBand'] = df[credit_score_col].apply(credit_score_band)
-    print(f" Created CreditScoreBand from '{credit_score_col}' column.")
-else:
-    print("Credit Score column not found. Skipping CreditScoreBand creation.")
-
-# 5. One-Hot Encode Categorical Columns (if present)
-categorical_cols = ['LoanPurpose', 'PropertyType', 'CreditScoreBand']
-for col in categorical_cols:
+for col in cols_to_drop:
     if col in df.columns:
-        df = pd.get_dummies(df, columns=[col], drop_first=True)
+        df = df.drop(col, axis=1)
 
-print(" Categorical Encoding Completed.")
+print("columns left:", len(df.columns))
 
-# 6. Handle Missing Numerical Values
-numerical_cols = df.select_dtypes(include=['float64', 'int64']).columns
+# -----------------------------
+# missing values
+# -----------------------------
 
-for col in numerical_cols:
-    df[col].fillna(df[col].median(), inplace=True)
+print("\nchecking missing values...")
 
-print(" Handled missing numerical values.")
+missing_before = df.isnull().sum().sum()
+print("missing before:", missing_before)
 
-# 7. Standard Scaling
-scaler = StandardScaler()
-df[numerical_cols] = scaler.fit_transform(df[numerical_cols])
+# filling numeric columns with median (seems safe)
+num_cols = df.select_dtypes(include=['int64', 'float64']).columns
 
-print(" Standardized numerical features.")
+for col in num_cols:
+    df[col] = df[col].fillna(df[col].median())
 
-# 8. Save Final Engineered Dataset
-#df.to_csv('engineered_data.csv', index=False)
-print("\n Feature Engineering Completed Successfully!")
-print(" Final dataset saved as 'engineered_data.csv'.")
+missing_after = df.isnull().sum().sum()
+print("missing after:", missing_after)
 
-# -------------------------
-# EXTRA FEATURES (just trying few things)
-# -------------------------
+# -----------------------------
+# encoding target
+# -----------------------------
 
-print("trying some extra features...")
+print("\nencoding target column...")
 
-# simple ratio (just experimenting)
-if "origupb" in df.columns and "dti" in df.columns:
-    df["loan_to_income_simple"] = df["origupb"] / (df["dti"] + 1)
+target = "loanriskcategory"
 
-# interaction (not sure if useful, just checking)
-if "creditscore" in df.columns and "dti" in df.columns:
-    df["credit_dti_interaction"] = df["creditscore"] * df["dti"]
+if df[target].dtype == 'object':
+    df[target] = df[target].astype('category').cat.codes
 
-print("extra features added")
+print("target encoded")
 
+# -----------------------------
+# selecting features
+# -----------------------------
 
-# -------------------------
-# CORRELATION CHECK
-# -------------------------
+print("\nselecting features...")
 
-print("\nchecking correlation with target (if exists)")
+drop_cols = [target, 'firstpaymentdate', 'maturitydate', 'computedmaturity']
 
-if "delinquencyflag" in df.columns:
-    corr = df.corr(numeric_only=True)
-    print(corr["delinquencyflag"].sort_values(ascending=False).head(10))
-else:
-    print("target column not found for correlation")
+X = df.drop(columns=[c for c in drop_cols if c in df.columns])
 
+# only numeric for now (keeping it simple)
+X = X.select_dtypes(include=['int64', 'float64'])
 
-# -------------------------
-# SAVE SMALL SAMPLE ONLY (safe)
-# -------------------------
+y = df[target]
 
-print("saving small sample (not full data)")
+print("X shape:", X.shape)
 
-df.sample(1000).to_csv("engineered_sample.csv", index=False)
+# -----------------------------
+# outliers (just trying something basic)
+# -----------------------------
 
-print("done feature engineering safely")
+print("\nhandling extreme values...")
+
+for col in X.columns:
+    low = X[col].quantile(0.01)
+    high = X[col].quantile(0.99)
+    X[col] = np.clip(X[col], low, high)
+
+print("clipped extreme values")
+
+# -----------------------------
+# final dataset
+# -----------------------------
+
+final_df = pd.concat([X, y], axis=1)
+
+print("\nfinal shape:", final_df.shape)
+
+# -----------------------------
+# saving
+# -----------------------------
+
+final_df.to_csv("processed_data.csv", index=False)
+
+print("\ndone preprocessing, saved file as processed_data.csv")
